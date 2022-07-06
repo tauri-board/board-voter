@@ -12,6 +12,9 @@
 
   const MIN_APPROVAL_RATE = 0.5;
 
+  // People running again MUST vote for themselves first, if this is set.
+  const MUST_VOTE_SELF_FIRST = true;
+
   export let setup = {
     seats: 2,
     num_candidates: 5,
@@ -20,6 +23,19 @@
     handicap: [] as number[],
     voted: [] as string[],
   };
+
+  function duplicates<T>(list: T[]): Set<T> {
+    const seen = new Set<T>();
+    const dup = new Set<T>();
+    list.forEach((x: T) => {
+      if (seen.has(x)) {
+        dup.add(x);
+      } else {
+        seen.add(x);
+      }
+    });
+    return dup;
+  }
 
   function save() {
     window.localStorage.setup = JSON.stringify(setup);
@@ -90,6 +106,21 @@
       out.round_selection = [];
       out.round_count = [];
       out.round_wins = [];
+
+      // Check for duplicate votes
+      setup.voted.forEach((list, i) => {
+        let votes = list.split("");
+        let name = voters[i];
+        let dup = Array.from(duplicates(votes));
+        if (dup.length > 0) {
+          throw `Voter ${name} has duplicate votes for ${dup}`;
+        }
+        if (MUST_VOTE_SELF_FIRST) {
+          if (i < setup.num_again && votes[0] != name) {
+            throw `Candidate ${name} is running again, but MUST vote for self first`;
+          }
+        }
+      });
 
       // Fill the lut.
       candidates.forEach((c, i) => lut.set(c, i));
