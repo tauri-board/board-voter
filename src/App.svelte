@@ -17,6 +17,7 @@
     num_candidates: 5,
     num_voters: 5,
     num_again: 2,
+    handicap: [] as number[],
     voted: [] as string[],
   };
 
@@ -51,8 +52,12 @@
     round_wins: [] as number[],
   };
 
-  function to_count(lut: Map<string, number>, votes: string): number[] {
+  function to_count(lut: Map<string, number>, handicap: number[], votes: string): number[] {
     let count = Array(setup.num_candidates).fill(0);
+    handicap.forEach((v, i) => {
+      count[i] = v;
+    });
+    Array(setup.num_candidates).fill(0);
     for (const vote of votes) {
       let i = lut.get(vote);
       if (i === undefined) throw `Vote for unknown candidate '${vote}'`;
@@ -79,25 +84,32 @@
     try {
       big_bad = null;
       let lut: Map<string, number> = new Map();
-      candidates.forEach((c, i) => lut.set(c, i));
-
-      // Number of total votes each candidate received
-      out.count = to_count(lut, setup.voted.join(""));
-
-      // Translate that to an approval rate.
-      out.rate = out.count.map((c) => c / setup.num_voters);
-
-      // Make a cursor for each preferred vote.
       let cursor = Array(setup.num_voters).fill(0);
       let win_set: Set<string> = new Set();
+      let not_approved: Set<string> = new Set();
       out.round_selection = [];
       out.round_count = [];
       out.round_wins = [];
 
+      // Fill the lut.
+      candidates.forEach((c, i) => lut.set(c, i));
+
+      // Number of total votes each candidate received
+      // Note: handicap is not applied to approval rate.
+      out.count = to_count(lut, [], setup.voted.join(""));
+
+      // Translate that to an approval rate.
+      out.rate = out.count.map((c) => c / setup.num_voters);
+      out.rate.forEach((rate, i) => {
+        if (rate < MIN_APPROVAL_RATE) {
+          not_approved.add(candidates[i]);
+        }
+      });
+
       function update_cursor() {
         for (let i = 0; i < setup.num_voters; i++) {
           let x = 0;
-          while (win_set.has(setup.voted[i][x])) {
+          while (win_set.has(setup.voted[i][x]) || not_approved.has(setup.voted[i][x])) {
             x++;
           }
           cursor[i] = x;
@@ -107,7 +119,10 @@
       for (let r = 0; r < setup.seats; r++) {
         update_cursor();
         let selection = cursor.map((pi, vi) => setup.voted[vi][pi]).join("");
-        let count = to_count(lut, selection);
+        if (selection == "") {
+          throw `No more suitable candidates than ${r}`;
+        }
+        let count = to_count(lut, setup.handicap, selection);
         let win = find_max(count);
         win_set.add(candidates[win]);
         out.round_selection.push(selection);
@@ -144,10 +159,15 @@
     return i < setup.num_again ? String.fromCodePoint(65 + i) : String.fromCodePoint(91 - setup.num_candidates + i);
   }
 
-  const onvote = (x: number) => (e) => {
+  const onvote = (i: number) => (e) => {
     let chunks = parse_votes(e.target.value);
-    setup.voted[x] = chunks;
+    setup.voted[i] = chunks;
     e.target.value = fmt_votes(chunks);
+    save();
+  };
+
+  const onhandicap = (i: number) => (e) => {
+    setup.handicap[i] = Number(e.target.value);
     save();
   };
 
@@ -222,7 +242,7 @@
         <th>{c}</th>
         <td>{out.count[i]} {out.rate[i] >= MIN_APPROVAL_RATE ? "✔" : ""}</td>
         {#each out.round_wins as win, round}
-          <td title={`Vote cursor: ${out.round_selection[round]}\n` + `Counted as: ${out.round_count[round]}`}
+          <td title={`Vote cursor: ${out.round_selection[round]}\n` + `Counted as: ${out.round_count[round].join("|")}`}
             >{win == i ? "#" + (round + 1) : ""}</td
           >
         {/each}
@@ -241,7 +261,7 @@
         <strong>{v}:</strong>
         <input type="text" on:change={onvote(i)} value={fmt_votes(setup.voted[i])} />
         {#if i < setup.num_again}
-          <input type="number" value={-0.5} step={0.5} min={-10} max={-0.5} />
+          <input type="number" on:change={onhandicap(i)} value={-0.5} step={0.5} min={-10} max={-0.5} />
         {/if}
       </p>
     {/each}
