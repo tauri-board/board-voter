@@ -4,6 +4,12 @@
   const MIN_SEATS = 1;
   const MAX_SEATS = 5;
 
+  // Min voters is *practically* 2.
+  // Since the smallest board is 3 people. One may abstain entirely (simulated by entering no votes).
+  // But two abstains is an invalid result, since there would not be a simple majority to recognize the outcome.
+  const MIN_VOTERS = 3;
+  const MAX_VOTERS = 7;
+
   const MIN_APPROVAL_RATE = 0.5;
 
   export let setup = {
@@ -40,7 +46,34 @@
   export let out = {
     count: [] as number[],
     rate: [] as number[],
+    round_selection: [] as string[],
+    round_count: [] as number[][],
+    round_wins: [] as number[],
   };
+
+  function to_count(lut: Map<string, number>, votes: string): number[] {
+    let count = Array(setup.num_candidates).fill(0);
+    for (const vote of votes) {
+      let i = lut.get(vote);
+      if (i === undefined) throw `Vote for unknown candidate '${vote}'`;
+      count[i]++;
+    }
+    return count;
+  }
+
+  function find_max(count: number[]): number {
+    let max_i = 0;
+    let max_val = count[0];
+
+    for (let i = 1; i < count.length; i++) {
+      if (count[i] > max_val) {
+        max_i = i;
+        max_val = count[i];
+      }
+    }
+
+    return max_i;
+  }
 
   function compute() {
     try {
@@ -48,16 +81,40 @@
       let lut: Map<string, number> = new Map();
       candidates.forEach((c, i) => lut.set(c, i));
 
-      // Number of votes received
-      out.count = Array(setup.num_candidates).fill(0);
-      for (const votes of setup.voted) {
-        for (const vote of votes) {
-          let i = lut.get(vote);
-          if (i === undefined) throw `Vote for unknown candidate '${vote}'`;
-          out.count[i]++;
+      // Number of total votes each candidate received
+      out.count = to_count(lut, setup.voted.join(""));
+
+      // Translate that to an approval rate.
+      out.rate = out.count.map((c) => c / setup.num_voters);
+
+      // Make a cursor for each preferred vote.
+      let cursor = Array(setup.num_voters).fill(0);
+      let win_set: Set<string> = new Set();
+      out.round_selection = [];
+      out.round_count = [];
+      out.round_wins = [];
+
+      function update_cursor() {
+        for (let i = 0; i < setup.num_voters; i++) {
+          let x = 0;
+          while (win_set.has(setup.voted[i][x])) {
+            x++;
+          }
+          cursor[i] = x;
         }
       }
-      out.rate = out.count.map((c) => c / setup.num_voters);
+
+      for (let r = 0; r < setup.seats; r++) {
+        update_cursor();
+        let selection = cursor.map((pi, vi) => setup.voted[vi][pi]).join("");
+        let count = to_count(lut, selection);
+        let win = find_max(count);
+        win_set.add(candidates[win]);
+        out.round_selection.push(selection);
+        out.round_count.push(count);
+        out.round_wins.push(win);
+        console.log(r, selection, win);
+      }
     } catch (e) {
       big_bad = e.toString();
     }
@@ -131,13 +188,14 @@
     save();
   }
   export function onvoters(e) {
-    setup.num_voters = between(3, Number(e.target.value), 7);
+    setup.num_voters = between(MIN_VOTERS, Number(e.target.value), MAX_VOTERS);
     e.target.value = setup.num_voters;
     update_votnames();
     save();
   }
   export function onagain(e) {
-    setup.num_again = between(0, Number(e.target.value), setup.num_candidates);
+    let max = Math.min(setup.num_candidates, setup.num_voters);
+    setup.num_again = between(0, Number(e.target.value), max);
     e.target.value = setup.num_again;
     update_cannames();
     save();
@@ -162,22 +220,29 @@
     {#each candidates as c, i}
       <tr>
         <th>{c}</th>
-        <td>{out.count[i]}</td>
-        <td>{out.rate[i] >= MIN_APPROVAL_RATE ? "OK" : ""}</td>
+        <td>{out.count[i]} {out.rate[i] >= MIN_APPROVAL_RATE ? "✔" : ""}</td>
+        {#each out.round_wins as win, round}
+          <td title={`Vote cursor: ${out.round_selection[round]}\n` + `Counted as: ${out.round_count[round]}`}
+            >{win == i ? "#" + (round + 1) : ""}</td
+          >
+        {/each}
       </tr>
     {/each}
   </table>
   <div>
     <h2>
-      <input type="number" value={setup.num_voters} on:change={onvoters} step="1" min="3" max="7" />
+      <input type="number" value={setup.num_voters} on:change={onvoters} step="1" min={MIN_VOTERS} max={MAX_VOTERS} />
       voters, with
-      <input type="number" value={setup.num_again} on:change={onagain} step="1" min="0" max="7" />
+      <input type="number" value={setup.num_again} on:change={onagain} step="1" min="0" max={MAX_VOTERS} />
       running again
     </h2>
     {#each voters as v, i}
       <p>
         <strong>{v}:</strong>
         <input type="text" on:change={onvote(i)} value={fmt_votes(setup.voted[i])} />
+        {#if i < setup.num_again}
+          <input type="number" value={-0.5} step={0.5} min={-10} max={-0.5} />
+        {/if}
       </p>
     {/each}
   </div>
@@ -215,5 +280,7 @@
     width: 260px;
     height: 300px;
     resize: none;
+    background-color: #eee;
+    color: #040;
   }
 </style>
