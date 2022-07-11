@@ -27,6 +27,7 @@
   function load(json?: string) {
     try {
       setup = Object.assign(setup, JSON.parse(json || window.localStorage.setup));
+      setup.cleanup();
       save();
     } catch (e) {
       console.error(e);
@@ -93,6 +94,7 @@
   export function onvoters(e) {
     setup.num_voters = between(MIN_VOTERS, Number(e.target.value), MAX_VOTERS);
     e.target.value = setup.num_voters;
+    setup.cleanup();
     save();
     update();
   }
@@ -100,6 +102,7 @@
     let max = Math.min(setup.num_candidates, setup.num_voters);
     setup.num_again = between(0, Number(e.target.value), max);
     e.target.value = setup.num_again;
+    setup.cleanup();
     save();
     update();
   }
@@ -206,7 +209,7 @@
               {/if}
             </td>
             {#each out.round_selection as sel, round}
-              <td><small>{sel[vid]}<sub>{out.round_selection_secondairy[round][vid]}</sub></small></td>
+              <td><small>{sel[vid] || ""}<sub>{out.round_selection_secondairy[round][vid] || ""}</sub></small></td>
             {/each}
           </tr>
         {/each}

@@ -13,6 +13,7 @@ export type Setup = {
   votesBy(i: number): string[];
   generateCandidateNames(): string[];
   generateVoterNames(): string[];
+  cleanup(): void;
 };
 
 export const DEFAULT_SETUP: Setup = {
@@ -51,4 +52,16 @@ export const DEFAULT_SETUP: Setup = {
     }
     return voters;
   },
+
+  cleanup() {
+    this.voted.splice(this.num_voters);
+    this.deduction.splice(this.num_again);
+    for (const k in this) {
+      if (!SETUP_KEYS.includes(k) && Object.prototype.hasOwnProperty.call(this, k)) {
+        delete this[k];
+      }
+    }
+  },
 };
+
+export const SETUP_KEYS = Object.keys(DEFAULT_SETUP);
