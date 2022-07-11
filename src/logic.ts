@@ -8,6 +8,7 @@ export type RuleSet = {
 };
 
 export type Count = number[];
+export type Selection = (string | undefined)[];
 
 export type Result = {
   error: string | null;
@@ -16,8 +17,8 @@ export type Result = {
   approved: boolean[];
   count: Count;
   rate: number[];
-  round_selection: string[];
-  round_selection_secondairy: string[];
+  round_selection: Selection[];
+  round_selection_secondairy: Selection[];
   round_count: Count[];
   round_wins: number[];
 };
@@ -69,10 +70,11 @@ function blend_counts(pri_count: Count, sec_count: Count, pri_weight: number): C
   return pri_count.map((count, cid) => count * pri_weight + sec_count[cid] * sec_weight);
 }
 
-function count_from_votes(lut: Map<string, number>, votes: string): Count {
+function count_from_votes(lut: Map<string, number>, votes: Selection): Count {
   const count = Array(lut.size).fill(0);
 
   for (const vote of votes) {
+    if (vote === undefined) continue;
     const cid = lut.get(vote);
     if (cid === undefined) throw `Vote for unknown candidate '${vote}'`;
     count[cid]++;
@@ -99,7 +101,7 @@ export function tick(rules: RuleSet, setup: Setup): Result {
   let have_won: Set<string> = new Set();
   let are_approved: Set<string> = new Set();
 
-  function find_selection(setup: Setup, have_won: Set<string>, are_approved: Set<string>): string {
+  function find_selection(setup: Setup, have_won: Set<string>, are_approved: Set<string>): Selection {
     return (
       Array(setup.num_voters)
         .fill(0)
@@ -107,7 +109,6 @@ export function tick(rules: RuleSet, setup: Setup): Result {
         // 1. Is approved
         // 2. Has not already won
         .map((_, vid) => setup.votesBy(vid).find((vote) => are_approved.has(vote) && !have_won.has(vote)))
-        .join("")
     );
   }
 
@@ -115,8 +116,8 @@ export function tick(rules: RuleSet, setup: Setup): Result {
     setup: Setup,
     have_won: Set<string>,
     are_approved: Set<string>,
-    primary: string
-  ): string {
+    primary: Selection
+  ): Selection {
     return (
       Array(setup.num_voters)
         .fill(0)
@@ -127,7 +128,6 @@ export function tick(rules: RuleSet, setup: Setup): Result {
         .map((_, vid) =>
           setup.votesBy(vid).find((vote) => are_approved.has(vote) && !have_won.has(vote) && vote !== primary[vid])
         )
-        .join("")
     );
   }
 
@@ -163,7 +163,7 @@ export function tick(rules: RuleSet, setup: Setup): Result {
 
     // Number of total votes each candidate received
     // Note: deduction is not applied to approval rate.
-    result.count = count_from_votes(lut, setup.voted.join(""));
+    result.count = count_from_votes(lut, setup.voted.map((s) => s.split("")).flat());
 
     // Translate that count...
     result.count.forEach((count, cid) => {
@@ -186,7 +186,7 @@ export function tick(rules: RuleSet, setup: Setup): Result {
       // Map the cursor, which is an array of offsets, to a string of names.
       // E.g. [0,4,1,0,0] to "AXBAC".
       // let selection = cursor.map((pos, vid) => setup.votesBy(vid)[pos]).join("");
-      if (selection == "") {
+      if (selection.every((v) => v === undefined)) {
         throw `No more suitable candidates than ${r}`;
       }
       const pri_count = count_from_votes(lut, selection);
