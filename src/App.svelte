@@ -6,12 +6,15 @@
 
   export let detailed = true;
 
-  const rules: RuleSet = {
+  export const rules: RuleSet = {
     // At least 50% of the voters should back a candidate, to be considered suitable.
     minApprovalRate: 0.5,
 
     // People running again MUST vote for themselves first, if this is set.
     mustVoteSelfFirst: true,
+
+    // What blend ratio to use for primary:secondary vote. 100% is equivalent to disabled.
+    voteBlendRatio: 0.65,
   };
 
   // Note: we depend on reassigning the setup variable to update the UI.
@@ -25,7 +28,9 @@
     try {
       setup = Object.assign(setup, JSON.parse(json || window.localStorage.setup));
       save();
-    } catch (_) {}
+    } catch (e) {
+      console.error(e);
+    }
   }
 
   load();
@@ -68,8 +73,8 @@
     save();
     update();
   };
-  const onhandicap = (i: number) => (e) => {
-    setup.handicap[i] = Number(e.target.value);
+  const ondeduction = (i: number) => (e) => {
+    setup.deduction[i] = Number(e.target.value);
     save();
     update();
   };
@@ -132,11 +137,9 @@
           <small>min. {(rules.minApprovalRate * 100).toFixed(0)}%</small>
         </th>
         {#each out.round_selection as sel, round}
-          <th
-            title={`Vote cursor: ${out.round_selection[round]}\n` + `Counted as: ${out.round_count[round].join("|")}`}
-          >
+          <th>
             Round {round + 1}<br />
-            <small>incl. handicap</small>
+            <small>incl. deduction</small>
           </th>
         {/each}
       </tr>
@@ -147,10 +150,8 @@
           <th>{name}</th>
           <td>{out.count[cid]}<small>/{setup.num_voters}</small> {out.approved[cid] ? "✔" : ""}</td>
           {#each out.round_wins as win, round}
-            <td
-              title={`Vote cursor: ${out.round_selection[round]}\n` + `Counted as: ${out.round_count[round].join("|")}`}
-            >
-              <small>{out.round_count[round][cid]}</small>
+            <td>
+              <small>{out.round_count[round][cid].toFixed(2)}</small>
               {win == cid ? "#" + (round + 1) : ""}
             </td>
           {/each}
@@ -169,10 +170,21 @@
       <thead>
         <tr>
           <th />
-          <th>Votes <small>in order of preference</small></th>
-          <th>Handicaps <small>for consecutive terms</small></th>
-          {#each out.round_selection as sel, round}
-            <th><small>Cursor {round + 1}</small></th>
+          <th>
+            Votes<br />
+            <small>in order of preference</small>
+          </th>
+          <th>
+            Deduction<br />
+            <small>for consecutive terms</small>
+          </th>
+          {#each out.round_selection as _, round}
+            <th>
+              <small>
+                Cursor {round + 1}<br />
+                {rules.voteBlendRatio * 100}:{(1 - rules.voteBlendRatio) * 100}
+              </small>
+            </th>
           {/each}
         </tr>
       </thead>
@@ -185,8 +197,8 @@
               {#if vid < setup.num_again}
                 <input
                   type="number"
-                  on:change={onhandicap(vid)}
-                  value={setup.handicapFor(vid)}
+                  on:change={ondeduction(vid)}
+                  value={setup.deductionFor(vid)}
                   step={0.5}
                   min={-10}
                   max={-0.5}
@@ -194,7 +206,7 @@
               {/if}
             </td>
             {#each out.round_selection as sel, round}
-              <td><small>{sel[vid]}</small></td>
+              <td><small>{sel[vid]}<sub>{out.round_selection_secondairy[round][vid]}</sub></small></td>
             {/each}
           </tr>
         {/each}

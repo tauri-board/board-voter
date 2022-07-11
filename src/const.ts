@@ -8,3 +8,5 @@ export const MAX_SEATS = 5;
 // But two abstains is an invalid result, since there would not be a simple majority to recognize the outcome.
 export const MIN_VOTERS = 3;
 export const MAX_VOTERS = 7;
+
+export const BLEND_RATIO = 0.65;

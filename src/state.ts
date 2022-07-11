@@ -6,10 +6,10 @@ export type Setup = {
   num_candidates: number;
   num_voters: number;
   num_again: number;
-  handicap: number[];
+  deduction: number[];
   voted: string[];
 
-  handicapFor(i: number): number;
+  deductionFor(i: number): number;
   votesBy(i: number): string[];
   generateCandidateNames(): string[];
   generateVoterNames(): string[];
@@ -20,11 +20,11 @@ export const DEFAULT_SETUP: Setup = {
   num_candidates: 5,
   num_voters: 5,
   num_again: 2,
-  handicap: [-1, -1] as number[],
+  deduction: [-1, -1] as number[],
   voted: ["A", "B", "X", "X", "X"] as string[],
 
-  handicapFor(i: number): number {
-    return this.handicap[i] || 0;
+  deductionFor(i: number): number {
+    return this.deduction[i] || 0;
   },
 
   votesBy(i: number): string[] {

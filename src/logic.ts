@@ -1,19 +1,24 @@
+import { BLEND_RATIO } from "./const";
 import type { Setup } from "./state";
 
 export type RuleSet = {
   minApprovalRate: number;
   mustVoteSelfFirst: boolean;
+  voteBlendRatio: number;
 };
+
+export type Count = number[];
 
 export type Result = {
   error: string | null;
   candidateNames: string[];
   voterNames: string[];
   approved: boolean[];
-  count: number[];
+  count: Count;
   rate: number[];
   round_selection: string[];
-  round_count: number[][];
+  round_selection_secondairy: string[];
+  round_count: Count[];
   round_wins: number[];
 };
 
@@ -50,15 +55,27 @@ function find_max(count: number[]): number {
   return max_i;
 }
 
-function to_count(lut: Map<string, number>, handicap: number[], votes: string): number[] {
-  let count = Array(lut.size)
-    .fill(0)
-    .map((val, cid) => handicap[cid] || val);
+function apply_deduction(raw_count: Count, deduction: Count): Count {
+  return raw_count.map((count, cid) => count + (deduction[cid] || 0));
+}
+
+function blend_counts(pri_count: Count, sec_count: Count, pri_weight: number): Count {
+  if (pri_weight > 1) throw "Can't have >100% weight for primary vote";
+  if (pri_weight < 0) throw "Can't have <0% weight for primary vote";
+  if (pri_weight == 1) return pri_count;
+  if (pri_weight == 0) return sec_count;
+
+  const sec_weight: number = 1.0 - pri_weight;
+  return pri_count.map((count, cid) => count * pri_weight + sec_count[cid] * sec_weight);
+}
+
+function count_from_votes(lut: Map<string, number>, votes: string): Count {
+  const count = Array(lut.size).fill(0);
 
   for (const vote of votes) {
-    let i = lut.get(vote);
-    if (i === undefined) throw `Vote for unknown candidate '${vote}'`;
-    count[i]++;
+    const cid = lut.get(vote);
+    if (cid === undefined) throw `Vote for unknown candidate '${vote}'`;
+    count[cid]++;
   }
 
   return count;
@@ -73,6 +90,7 @@ export function tick(rules: RuleSet, setup: Setup): Result {
     count: [],
     rate: [],
     round_selection: [],
+    round_selection_secondairy: [],
     round_count: [],
     round_wins: [],
   };
@@ -82,13 +100,35 @@ export function tick(rules: RuleSet, setup: Setup): Result {
   let are_approved: Set<string> = new Set();
 
   function find_selection(setup: Setup, have_won: Set<string>, are_approved: Set<string>): string {
-    return Array(setup.num_voters)
-      .fill(0)
-      // For every voter, find the *first* vote in their list that:
-      // 1. Is approved
-      // 2. Has not already won
-      .map((_, vid) => setup.votesBy(vid).find((vote) => are_approved.has(vote) && !have_won.has(vote)))
-      .join("");
+    return (
+      Array(setup.num_voters)
+        .fill(0)
+        // For every voter, find the *first* vote in their list that:
+        // 1. Is approved
+        // 2. Has not already won
+        .map((_, vid) => setup.votesBy(vid).find((vote) => are_approved.has(vote) && !have_won.has(vote)))
+        .join("")
+    );
+  }
+
+  function find_selection_secondairy(
+    setup: Setup,
+    have_won: Set<string>,
+    are_approved: Set<string>,
+    primary: string
+  ): string {
+    return (
+      Array(setup.num_voters)
+        .fill(0)
+        // For every voter, find the *first* vote in their list that:
+        // 1. Is approved
+        // 2. Has not already won
+        // 3. Is not their primary vote
+        .map((_, vid) =>
+          setup.votesBy(vid).find((vote) => are_approved.has(vote) && !have_won.has(vote) && vote !== primary[vid])
+        )
+        .join("")
+    );
   }
 
   try {
@@ -122,8 +162,8 @@ export function tick(rules: RuleSet, setup: Setup): Result {
     }
 
     // Number of total votes each candidate received
-    // Note: handicap is not applied to approval rate.
-    result.count = to_count(lut, [], setup.voted.join(""));
+    // Note: deduction is not applied to approval rate.
+    result.count = count_from_votes(lut, setup.voted.join(""));
 
     // Translate that count...
     result.count.forEach((count, cid) => {
@@ -141,6 +181,7 @@ export function tick(rules: RuleSet, setup: Setup): Result {
     // Run selection rounds.
     for (let r = 0; r < setup.seats; r++) {
       let selection = find_selection(setup, have_won, are_approved);
+      let selection_secondairy = find_selection_secondairy(setup, have_won, are_approved, selection);
       // update_cursor();
       // Map the cursor, which is an array of offsets, to a string of names.
       // E.g. [0,4,1,0,0] to "AXBAC".
@@ -148,10 +189,15 @@ export function tick(rules: RuleSet, setup: Setup): Result {
       if (selection == "") {
         throw `No more suitable candidates than ${r}`;
       }
-      let count = to_count(lut, setup.handicap, selection);
-      let win = find_max(count);
+      const pri_count = count_from_votes(lut, selection);
+      const sec_count = count_from_votes(lut, selection_secondairy);
+      const blend_count = blend_counts(pri_count, sec_count, rules.voteBlendRatio);
+      const count = apply_deduction(blend_count, setup.deduction);
+
+      const win = find_max(count);
       have_won.add(result.candidateNames[win]);
       result.round_selection.push(selection);
+      result.round_selection_secondairy.push(selection_secondairy);
       result.round_count.push(count);
       result.round_wins.push(win);
     }
